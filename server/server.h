@@ -3,7 +3,11 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <arpa/inet.h>
 #include "murmurhash.h"
 #include "crc32.h"
+#include <rdma/rdma_cma.h>
+
 
 #endif
