@@ -1,0 +1,16 @@
+server		: recv : TEST
+client->server	: send : TEST
+client		: recv : TESTOK
+server->client	: sned : TESTOK
+
+server 		: recv : GETHT1
+client->server	: send : GETHT1 
+client 		: recv : H1ADDR
+server->client 	: send : H1ADDR
+
+server		: recv : GETHT2
+client->server	: send : GETHT2
+client		: recv : H2ADDR
+server->client	: send : H2ADDR
+
+
