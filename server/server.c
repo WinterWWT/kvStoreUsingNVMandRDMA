@@ -12,6 +12,7 @@ void * poll_recv_cq(void * cm_id);
 void register_memory(struct rdma_cm_id * id);
 
 int on_completion(struct ibv_wc *wc);
+int on_completion2(struct ibv_wc *wc);
 
 int send_msg(struct rdma_cm_id * id);
 
@@ -96,6 +97,8 @@ int main()
 	//destroy a event channel
 	rdma_destroy_event_channel(channel);
 
+	printf("here.\n");
+	
 	return 0;
 }
 
@@ -127,6 +130,8 @@ int on_event(struct rdma_cm_event * event)
 	{
 		printf("on_event: unknown event.\n");
 	}
+
+	return ret;
 }
 
 int on_connect_request(struct rdma_cm_id * id)
@@ -139,17 +144,18 @@ int on_connect_request(struct rdma_cm_id * id)
 	id->send_cq_channel = ibv_create_comp_channel(id->verbs);
         id->recv_cq_channel = ibv_create_comp_channel(id->verbs);
 
-        id->send_cq = ibv_create_cq(id->verbs,16000,NULL,id->send_cq_channel,0);
-        id->recv_cq = ibv_create_cq(id->verbs,16000,NULL,id->recv_cq_channel,0);
+        id->send_cq = ibv_create_cq(id->verbs,16000,id,id->send_cq_channel,0);
+        id->recv_cq = ibv_create_cq(id->verbs,16000,id,id->recv_cq_channel,0);
 
         ibv_req_notify_cq(id->send_cq,0);
         ibv_req_notify_cq(id->recv_cq,0);
 
-        pthread_t poll_send_thread;
-        pthread_t poll_recv_thread;
+        //pthread_t poll_send_thread;
+        //pthread_t poll_recv_thread;
 
-        pthread_create(&poll_send_thread,NULL,poll_send_cq,id);
-        pthread_create(&poll_recv_thread,NULL,poll_recv_cq,id);
+	struct context * ctx = (struct context *)id->context;
+        pthread_create(&ctx->poll_send_thread,NULL,poll_send_cq,id);
+        pthread_create(&ctx->poll_recv_thread,NULL,poll_recv_cq,id);
 
 	struct ibv_qp_init_attr qp_attr;
         build_qp_attr(&qp_attr,id);
@@ -163,7 +169,7 @@ int on_connect_request(struct rdma_cm_id * id)
 	//params.initiator_depth = params.responder_resources =1;
 	//params.rnr_retry_count = 7;
 
-
+	printf("in %s: context address is %p.\n",__func__,id->context);
 	recv_msg(id);
 	rdma_accept(id,&params);
 
@@ -196,7 +202,7 @@ void * poll_send_cq(void * cm_id)
 
         while(true)
         {
-                ibv_get_cq_event(id->send_cq_channel,&id->send_cq,NULL);
+                ibv_get_cq_event(id->send_cq_channel,&id->send_cq,&cm_id);
 
                 ibv_ack_cq_events(id->send_cq,1);
 
@@ -212,6 +218,8 @@ void * poll_send_cq(void * cm_id)
                         }
                 }
         }
+
+	return NULL;
 }
 
 void * poll_recv_cq(void * cm_id)
@@ -224,7 +232,7 @@ void * poll_recv_cq(void * cm_id)
 
         while(true)
         {
-                ibv_get_cq_event(id->recv_cq_channel,&id->recv_cq,NULL);
+                ibv_get_cq_event(id->recv_cq_channel,&id->recv_cq,&cm_id);
 
                 ibv_ack_cq_events(id->recv_cq,1);
 
@@ -240,12 +248,15 @@ void * poll_recv_cq(void * cm_id)
                         }
                 }
         }
+
+	return NULL;
 }
 
 void register_memory(struct rdma_cm_id * id)
 {
 	struct context * ctx = (struct context *)id->context;
 	             
+	//printf("in %s: context address is %p.\n",__func__,id->context);
 	ctx->send_buffer = (char *)malloc(MSG_SIZE);
         ctx->recv_buffer = (char *)malloc(MSG_SIZE);
 
@@ -256,7 +267,8 @@ void register_memory(struct rdma_cm_id * id)
 int on_completion(struct ibv_wc *wc)
 {
         struct rdma_cm_id * id = (struct rdma_cm_id *)wc->wr_id;
-	struct context * ctx = (struct context *)id->context;
+	struct context * ctx = (struct context *)(id->context);
+	//printf("in %s: context address is %p.\n",__func__,id->context);
 
 	if (wc->status != IBV_WC_SUCCESS)
         {
@@ -269,7 +281,7 @@ int on_completion(struct ibv_wc *wc)
                 {
                         printf("send is completed.\n");
 			
-			struct message * msg_send = (struct message *)ctx->recv_buffer;
+			struct message * msg_send = (struct message *)ctx->send_buffer;
 
 			printf("send: %s.\n",msg_send->key);
                 }
@@ -292,6 +304,7 @@ int on_completion(struct ibv_wc *wc)
 
 				memcpy(ctx->send_buffer,&msg_send,sizeof(struct message));
 				
+				//printf("ready to send.\n");	
 				send_msg(id);
 			}
                 }
@@ -311,6 +324,66 @@ int on_completion(struct ibv_wc *wc)
         return 0;
 }
 
+int on_completion2(struct ibv_wc *wc)
+{
+        struct rdma_cm_id * id = (struct rdma_cm_id *)wc->wr_id;
+        struct context * ctx = (struct context *)id->context;
+        //printf("in %s: context address is %p.\n",__func__,id->context);
+
+        if (wc->status != IBV_WC_SUCCESS)
+        {
+                printf("opcode: %d.\n",wc->opcode);
+                return -1;
+        }
+        else
+        {
+                if(wc->opcode == IBV_WC_SEND)
+                {
+                        printf("send is completed.\n");
+
+                        struct message * msg_send = (struct message *)ctx->recv_buffer;
+
+                        printf("send: %s.\n",msg_send->key);
+                }
+                else if (wc->opcode == IBV_WC_RECV)
+                {
+                        printf("recv is completed.\n");
+
+                        struct message * msg_recv = (struct message *)ctx->recv_buffer;
+
+                        printf("recv: %s.\n",msg_recv->key);
+
+                        if (msg_recv->type == TEST)
+                        {
+                                printf("recv TEST is ok.\n");
+
+                                struct message msg_send;
+                                msg_send.type = TESTOK;
+                                char * key2 = "I recved your msg!";
+                                strcpy(msg_send.key,key2);
+
+                                memcpy(ctx->send_buffer,&msg_send,sizeof(struct message));
+
+                                send_msg(id);
+                        }
+                }
+
+                else if (wc->opcode == IBV_WC_RDMA_READ)
+                {
+                        printf("read is completed.\n");
+                }
+		
+		else if (wc->opcode == IBV_WC_RDMA_WRITE)
+                {
+                        printf("write is completed.\n");
+                }
+
+        }
+
+        return 0;
+}
+
+
 int send_msg(struct rdma_cm_id * id)
 {
         struct ibv_send_wr wr;
@@ -318,21 +391,27 @@ int send_msg(struct rdma_cm_id * id)
         struct ibv_sge sge;
         struct context * ctx = (struct context *)(id->context);
 
-        memset(&wr, 0, sizeof(wr));
+        //printf("send1.\n");
+	memset(&wr, 0, sizeof(wr));
         //wr.wr_id = (uint64_t)id;
 	wr.wr_id = (uintptr_t)id;
+	//printf("in %s : context address is %p.\n",__func__,id->context);
         wr.opcode = IBV_WR_SEND;
         wr.sg_list = &sge;
         wr.num_sge = 1;
         wr.send_flags = IBV_SEND_SIGNALED;
 
-        sge.lkey = ctx->send_mr->lkey;
+        //printf("send2.\n");
+	sge.lkey = ctx->send_mr->lkey;
         //sge.addr = (uint64_t)ctx->send_buffer;
+	//printf("sned2.1.\n");
 	sge.addr = (uintptr_t)ctx->send_buffer;
+	//printf("send2.2");
         sge.length = MSG_SIZE;
 
         int rc;
 
+	//printf("send3.\n");
         rc = ibv_post_send(id->qp,&wr,&bad_wr);
         if (rc)
         {
@@ -341,6 +420,7 @@ int send_msg(struct rdma_cm_id * id)
 
         recv_msg(id);
 
+	//printf("send4.\n");
         return rc;
 }
 
@@ -378,6 +458,8 @@ int recv_msg(struct rdma_cm_id * id)
 int on_connection(struct rdma_cm_id * id)
 {
 	int ret = 0;
+	//printf("in %s: sleeping 1 sec.\n",__func__);
+	usleep(1000000000);
 
 	return ret;	
 }
@@ -385,7 +467,8 @@ int on_connection(struct rdma_cm_id * id)
 int on_disconnect(struct rdma_cm_id * id)
 {
 	int ret = 0;
-	
+
+	//printf("%s: 1.\n",__func__);	
 	struct context * ctx = (struct context *)id->context;
         free(ctx->send_buffer);
         free(ctx->recv_buffer);

@@ -10,6 +10,8 @@
 #include <rdma/rdma_cma.h>
 #include <pthread.h>
 #include <stdbool.h>
+#include <unistd.h>
+
 
 #define TIMEOUT_IN_MS 500
 #define MSG_SIZE 8192
@@ -21,6 +23,9 @@ struct context
 
 	char * send_buffer;
 	char * recv_buffer;
+
+	pthread_t poll_send_thread;
+        pthread_t poll_recv_thread;
 };
 
 enum MSG_TYPE

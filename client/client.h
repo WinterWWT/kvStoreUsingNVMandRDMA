@@ -23,6 +23,9 @@ struct context
 	
 	char * send_buffer;
 	char * recv_buffer;
+
+	pthread_t poll_send_thread;
+        pthread_t poll_recv_thread;
 };
 
 enum MSG_TYPE
