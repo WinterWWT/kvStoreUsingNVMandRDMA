@@ -257,6 +257,7 @@ void register_memory(struct rdma_cm_id * id)
 	struct context * ctx = (struct context *)id->context;
 	             
 	//printf("in %s: context address is %p.\n",__func__,id->context);
+	//printf("%s is called.\n",__func__);
 	ctx->send_buffer = (char *)malloc(MSG_SIZE);
         ctx->recv_buffer = (char *)malloc(MSG_SIZE);
 
@@ -430,42 +431,11 @@ int on_disconnect(struct rdma_cm_id * id)
                 return ret;
         }
 
-        ibv_destroy_comp_channel(id->send_cq_channel);
-        if (ret)
-        {
-                printf("ibv_destroy_comp_channel(id->send_cq_channel) error.\n");
-
-                return ret;
-        }
-
-        ibv_destroy_comp_channel(id->recv_cq_channel);
-        if (ret)
-        {
-                printf("ibv_destroy_comp_channel(id->recv_cq_channel) error.\n");
-
-                return ret;
-        }
-
-        ibv_destroy_cq(id->send_cq);
-        if (ret)
-        {
-                printf("ibv_destroy_cq(id->send_cq) error.\n");
-
-                return ret;
-        }
-
-        ibv_destroy_cq(id->recv_cq);
-        if (ret)
-        {
-                printf("ibv_destroy_cq(id->recv_cq) error.\n");
-                return ret;
-        }
+	free(id->context);
 
         rdma_destroy_qp(id);
 
 	rdma_destroy_id(id);
-
-	rdma_destroy_event_channel(id->channel);
 
 	return ret;
 }	

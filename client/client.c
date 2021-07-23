@@ -43,8 +43,6 @@ int on_disconnect(struct rdma_cm_id * id);
 //malloc and register send and recv buffer.
 void register_memory(struct rdma_cm_id * id);
 
-//
-
 int main(int argc,char ** argv)
 {
 	if (argc != 3)
@@ -60,6 +58,7 @@ int main(int argc,char ** argv)
 	
 	struct rdma_event_channel * channel = NULL;
 	channel = rdma_create_event_channel();
+	
 	if (!channel)
 	{
 		printf("rdma_create_event_channel error.\n");
@@ -68,6 +67,7 @@ int main(int argc,char ** argv)
 
 	//struct rdma_cm_id * conn = NULL;
 	ret = rdma_create_id(channel,&conn,NULL,RDMA_PS_TCP);
+	
 	if (ret)
 	{
 		printf("rdma_create_id error.\n");
@@ -85,21 +85,17 @@ int main(int argc,char ** argv)
 	while(rdma_get_cm_event(channel,&event) == 0)
 	{
 		struct rdma_cm_event event_copy;
+		
 		memcpy(&event_copy,event,sizeof(event_copy));
 
 		rdma_ack_cm_event(event);
-		
+
 		if (on_event(&event_copy))
 		{
 			break;
 		}
 	}
 	
-	//sleep(10);
-	//ret = on_disconnect(conn);
-
-	//rdma_destroy_id(conn);
-
 	rdma_destroy_event_channel(channel);
 
 	return ret;
@@ -116,9 +112,6 @@ void stop_manually(int signal)
 		printf("rdma_disconnect(conn).\n");
 	}
 
-	//on_disconnect(conn);
-	
-	//sleep(1);
 	printf("end to stop.\n");
 	
 	//rdma_destroy_id(conn);
@@ -234,7 +227,12 @@ void * poll_send_cq(void * cm_id)
 	{
 		//printf("%s: 1.\n",__func__);
 		ibv_get_cq_event(id->send_cq_channel,&id->send_cq,&cm_id);
+		
+		//printf("cm_id: %p.\n",cm_id);
 
+		printf("in %s address of cm_id->cq: %p.\n",__func__,(void *)id->send_cq);
+        	printf("in %s address of conn->send_cq: %p.\n",__func__,(void *)conn->send_cq);
+		
 		ibv_ack_cq_events(id->send_cq,1);
 
 		ibv_req_notify_cq(id->send_cq,0);
@@ -430,42 +428,13 @@ int on_disconnect(struct rdma_cm_id * id)
 	}
 	
 	printf("stop 1.1.\n");
-
-	rdma_destroy_qp(id);
-
-	printf("stop 1.1.1.\n");
-
-	//ret = ibv_destroy_cq(id->send_cq);
-        //if (ret)
-	//{
-        //        printf("ibv_destroy_cq(id->send_cq) error.\n");
-
-        //        return ret;
-        //}
-
-	printf("stop 1.2.\n");
-
-	//ret = ibv_destroy_comp_channel(id->send_cq_channel);
-	if (ret)
-        {
-                printf("ibv_destroy_comp_channel(id->send_cq_channel) error.\n");
-
-		return ret;
-        }
-
-	printf("stop 1.2.1.\n");
-
-	//ret = ibv_destroy_comp_channel(id->recv_cq_channel);
-	if (ret)
-        {
-                printf("ibv_destroy_comp_channel(id->recv_cq_channel) error.\n");
-
-                return ret;
-        }
+	
+	rdma_destroy_qp(id); //maybe conn not id	
+	
+	//doesn't need ibv_destroy_cq();
+	//doesn't need ibv_destroy_comp_channel();
 
 	printf("stop 2.\n");
-
-	//rdma_destroy_qp(id);
 
 	rdma_destroy_id(id);
 	if (ret)
@@ -476,7 +445,6 @@ int on_disconnect(struct rdma_cm_id * id)
 	}
 
 	printf("stop 3.\n");
-	//rdma_destroy_event_channel(id->channel);
 	
 	ret = 1;
 	return ret;
