@@ -1,5 +1,9 @@
 #include "client.h"
 
+struct rdma_cm_id * conn = NULL;
+
+void stop_manually(int signal);
+
 //start after retrieving an event.
 int on_event(struct rdma_cm_event * event);
 
@@ -62,7 +66,7 @@ int main(int argc,char ** argv)
 		return -1;
 	}
 
-	struct rdma_cm_id * conn = NULL;
+	//struct rdma_cm_id * conn = NULL;
 	ret = rdma_create_id(channel,&conn,NULL,RDMA_PS_TCP);
 	if (ret)
 	{
@@ -74,7 +78,9 @@ int main(int argc,char ** argv)
 	rdma_resolve_addr(conn,NULL,addr->ai_addr,TIMEOUT_IN_MS);
 
 	freeaddrinfo(addr);
-	
+
+	signal(SIGINT,stop_manually);
+
 	struct rdma_cm_event * event = NULL;
 	while(rdma_get_cm_event(channel,&event) == 0)
 	{
@@ -88,15 +94,37 @@ int main(int argc,char ** argv)
 			break;
 		}
 	}
-
-	sleep(10);
-	ret = on_disconnect(conn);
+	
+	//sleep(10);
+	//ret = on_disconnect(conn);
 
 	//rdma_destroy_id(conn);
 
-	//rdma_destroy_event_channel(channel);
+	rdma_destroy_event_channel(channel);
 
 	return ret;
+}
+
+void stop_manually(int signal)
+{
+	printf("here we start to stop.\n");
+	int ret = 0;
+	ret = rdma_disconnect(conn);
+	
+	if (ret)
+	{
+		printf("rdma_disconnect(conn).\n");
+	}
+
+	//on_disconnect(conn);
+	
+	//sleep(1);
+	printf("end to stop.\n");
+	
+	//rdma_destroy_id(conn);
+
+	_exit(0);
+
 }
 
 int on_event(struct rdma_cm_event * event)
@@ -121,7 +149,6 @@ int on_event(struct rdma_cm_event * event)
 		
 		r = on_connection(event->id);
 	}
-	
 	else if (event->event == RDMA_CM_EVENT_DISCONNECTED)
 	{
 		printf("disconnected.\n");
@@ -221,7 +248,7 @@ void * poll_send_cq(void * cm_id)
 			//printf("in %s: context address is %p.\n",__func__,((struct rdma_cm_id *)wc.wr_id)->context);
 			int ret = on_completion(&wc);
 			
-			printf("%s: 3.\n",__func__);
+			//printf("%s: 3.\n",__func__);
 
 			if (ret)
 			{
@@ -318,11 +345,13 @@ int on_completion(struct ibv_wc *wc)
                                 //memcpy(ctx->send_buffer,&msg_send,MSG_SIZE);
 
                                 //send_msg(id);
+				//
+				rdma_disconnect(conn);
                         }
 
 		}
 		else if (wc->opcode == IBV_WC_RDMA_READ)
-		{
+		{  
 			printf("read is completed.\n");
 		}
 		else if (wc->opcode == IBV_WC_RDMA_WRITE)
@@ -382,7 +411,9 @@ int on_disconnect(struct rdma_cm_id * id)
 	free(ctx->recv_buffer);
 	ctx->send_buffer = NULL;
 	ctx->recv_buffer = NULL;
-	free(id->context);
+	//free(id->context);
+
+	printf("stop 1.\n");
 
 	ret = ibv_dereg_mr(ctx->send_mr);
 	if (ret)
@@ -391,14 +422,30 @@ int on_disconnect(struct rdma_cm_id * id)
 		return ret;
 	}
 
-	ibv_dereg_mr(ctx->recv_mr);
+	ret = ibv_dereg_mr(ctx->recv_mr);
 	if (ret)
    	{
 		printf("ibv_dereg_mr(ctx->send_mr) error");
 		return ret;
 	}
+	
+	printf("stop 1.1.\n");
 
-	ibv_destroy_comp_channel(id->send_cq_channel);
+	rdma_destroy_qp(id);
+
+	printf("stop 1.1.1.\n");
+
+	//ret = ibv_destroy_cq(id->send_cq);
+        //if (ret)
+	//{
+        //        printf("ibv_destroy_cq(id->send_cq) error.\n");
+
+        //        return ret;
+        //}
+
+	printf("stop 1.2.\n");
+
+	//ret = ibv_destroy_comp_channel(id->send_cq_channel);
 	if (ret)
         {
                 printf("ibv_destroy_comp_channel(id->send_cq_channel) error.\n");
@@ -406,7 +453,9 @@ int on_disconnect(struct rdma_cm_id * id)
 		return ret;
         }
 
-	ibv_destroy_comp_channel(id->recv_cq_channel);
+	printf("stop 1.2.1.\n");
+
+	//ret = ibv_destroy_comp_channel(id->recv_cq_channel);
 	if (ret)
         {
                 printf("ibv_destroy_comp_channel(id->recv_cq_channel) error.\n");
@@ -414,22 +463,9 @@ int on_disconnect(struct rdma_cm_id * id)
                 return ret;
         }
 
-	ibv_destroy_cq(id->send_cq);
-	if (ret)
-	{
-		printf("ibv_destroy_cq(id->send_cq) error.\n");
+	printf("stop 2.\n");
 
-		return ret;
-	}
-	
-	ibv_destroy_cq(id->recv_cq);	
-	if (ret)
-        {
-                printf("ibv_destroy_cq(id->recv_cq) error.\n");
-		return ret;
-        }
-
-	rdma_destroy_qp(id);
+	//rdma_destroy_qp(id);
 
 	rdma_destroy_id(id);
 	if (ret)
@@ -439,8 +475,10 @@ int on_disconnect(struct rdma_cm_id * id)
 		return ret;
 	}
 
-	rdma_destroy_event_channel(id->channel);
+	printf("stop 3.\n");
+	//rdma_destroy_event_channel(id->channel);
 	
+	ret = 1;
 	return ret;
 }
 
@@ -464,7 +502,7 @@ int on_connection(struct rdma_cm_id * id)
 	ret = send_msg(id);
 	//printf("on_connection2.\n");
 
-	usleep(10000000);
+	//usleep(10000000);
 	return ret;
 }
 

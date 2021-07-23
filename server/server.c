@@ -57,7 +57,7 @@ int main()
 	memset(&addr,0,sizeof(addr));
 	addr.sin_family = AF_INET;
 	//addr.sin_addr.s_addr = htonl(INADDR_ANY);
-	addr.sin_addr.s_addr = inet_addr("192.168.229.128");
+	addr.sin_addr.s_addr = inet_addr("192.168.253.164");
 	addr.sin_port = htons(45678);
 
 	//bind an RDMA identifier to a source address
@@ -104,7 +104,7 @@ int main()
 
 int on_event(struct rdma_cm_event * event)
 {
-	printf("event type: %s.\n",rdma_event_str(event->event));
+	//printf("event type: %s.\n",rdma_event_str(event->event));
 
 	int ret = 0;
 
@@ -169,7 +169,7 @@ int on_connect_request(struct rdma_cm_id * id)
 	//params.initiator_depth = params.responder_resources =1;
 	//params.rnr_retry_count = 7;
 
-	printf("in %s: context address is %p.\n",__func__,id->context);
+	//printf("in %s: context address is %p.\n",__func__,id->context);
 	recv_msg(id);
 	rdma_accept(id,&params);
 
@@ -324,66 +324,6 @@ int on_completion(struct ibv_wc *wc)
         return 0;
 }
 
-int on_completion2(struct ibv_wc *wc)
-{
-        struct rdma_cm_id * id = (struct rdma_cm_id *)wc->wr_id;
-        struct context * ctx = (struct context *)id->context;
-        //printf("in %s: context address is %p.\n",__func__,id->context);
-
-        if (wc->status != IBV_WC_SUCCESS)
-        {
-                printf("opcode: %d.\n",wc->opcode);
-                return -1;
-        }
-        else
-        {
-                if(wc->opcode == IBV_WC_SEND)
-                {
-                        printf("send is completed.\n");
-
-                        struct message * msg_send = (struct message *)ctx->recv_buffer;
-
-                        printf("send: %s.\n",msg_send->key);
-                }
-                else if (wc->opcode == IBV_WC_RECV)
-                {
-                        printf("recv is completed.\n");
-
-                        struct message * msg_recv = (struct message *)ctx->recv_buffer;
-
-                        printf("recv: %s.\n",msg_recv->key);
-
-                        if (msg_recv->type == TEST)
-                        {
-                                printf("recv TEST is ok.\n");
-
-                                struct message msg_send;
-                                msg_send.type = TESTOK;
-                                char * key2 = "I recved your msg!";
-                                strcpy(msg_send.key,key2);
-
-                                memcpy(ctx->send_buffer,&msg_send,sizeof(struct message));
-
-                                send_msg(id);
-                        }
-                }
-
-                else if (wc->opcode == IBV_WC_RDMA_READ)
-                {
-                        printf("read is completed.\n");
-                }
-		
-		else if (wc->opcode == IBV_WC_RDMA_WRITE)
-                {
-                        printf("write is completed.\n");
-                }
-
-        }
-
-        return 0;
-}
-
-
 int send_msg(struct rdma_cm_id * id)
 {
         struct ibv_send_wr wr;
@@ -459,7 +399,7 @@ int on_connection(struct rdma_cm_id * id)
 {
 	int ret = 0;
 	//printf("in %s: sleeping 1 sec.\n",__func__);
-	usleep(1000000000);
+	//usleep(1000000000);
 
 	return ret;	
 }
@@ -474,7 +414,7 @@ int on_disconnect(struct rdma_cm_id * id)
         free(ctx->recv_buffer);
         ctx->send_buffer = NULL;
         ctx->recv_buffer = NULL;
-	free(id->context);
+	//free(id->context);
 
 	ret = ibv_dereg_mr(ctx->send_mr);
         if (ret)
