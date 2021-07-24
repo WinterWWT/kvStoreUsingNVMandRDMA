@@ -103,7 +103,6 @@ int main(int argc,char ** argv)
 
 void stop_manually(int signal)
 {
-	printf("here we start to stop.\n");
 	int ret = 0;
 	ret = rdma_disconnect(conn);
 	
@@ -112,12 +111,7 @@ void stop_manually(int signal)
 		printf("rdma_disconnect(conn).\n");
 	}
 
-	printf("end to stop.\n");
-	
-	//rdma_destroy_id(conn);
-
 	_exit(0);
-
 }
 
 int on_event(struct rdma_cm_event * event)
@@ -155,7 +149,6 @@ int on_event(struct rdma_cm_event * event)
 	}
 
 	return r;
-
 }
 
 int on_addr_resolved(struct rdma_cm_id * id)
@@ -175,9 +168,6 @@ int on_addr_resolved(struct rdma_cm_id * id)
 
 	ibv_req_notify_cq(id->send_cq,0);
 	ibv_req_notify_cq(id->recv_cq,0);
-
-	//pthread_t poll_send_thread;
-	//pthread_t poll_recv_thread;
 
 	struct context * ctx = (struct context *)id->context;
 	pthread_create(&ctx->poll_send_thread,NULL,poll_send_cq,id);
@@ -225,34 +215,21 @@ void * poll_send_cq(void * cm_id)
 
 	while(true)
 	{
-		//printf("%s: 1.\n",__func__);
 		ibv_get_cq_event(id->send_cq_channel,&id->send_cq,&cm_id);
-		
-		//printf("cm_id: %p.\n",cm_id);
-
-		printf("in %s address of cm_id->cq: %p.\n",__func__,(void *)id->send_cq);
-        	printf("in %s address of conn->send_cq: %p.\n",__func__,(void *)conn->send_cq);
 		
 		ibv_ack_cq_events(id->send_cq,1);
 
 		ibv_req_notify_cq(id->send_cq,0);
 		
 		int num;
-		//printf("%s: 2.\n",__func__);
 
 		while(num = ibv_poll_cq(id->send_cq,1,&wc))
 		{
-			//printf("in %s: wc->wr_id address is %p.\n",__func__,(void *)wc.wr_id);
-			//printf("in %s: context address is %p.\n",__func__,((struct rdma_cm_id *)wc.wr_id)->context);
 			int ret = on_completion(&wc);
 			
-			//printf("%s: 3.\n",__func__);
-
 			if (ret)
 			{
 				break;
-
-				printf("%s error.\n",__func__);
 			}
 		}
 	}
@@ -270,8 +247,6 @@ void * poll_recv_cq(void * cm_id)
 
         while(true)
         {
-                //printf("%s: 1.\n",__func__);
-
 		ibv_get_cq_event(id->recv_cq_channel,&id->recv_cq,&cm_id);
 
                 ibv_ack_cq_events(id->recv_cq,1);
@@ -279,19 +254,14 @@ void * poll_recv_cq(void * cm_id)
                 ibv_req_notify_cq(id->recv_cq,0);
 
                 int num;
-		//printf("%s: 2.\n",__func__);
 
 		while(num = ibv_poll_cq(id->recv_cq,1,&wc))
                 {
-                        //printf("in %s: wc->wr_id address is %p.\n",__func__,(void *)wc.wr_id);
-
 			int ret = on_completion(&wc);
 
                         if (ret)
                         {
                                 break;
-
-				//printf("%s error.\n",__func__);
                         }
                 }
         }
@@ -301,16 +271,12 @@ void * poll_recv_cq(void * cm_id)
 
 int on_completion(struct ibv_wc *wc)
 {
-	//printf("here.\n");
 	struct rdma_cm_id * id = (struct rdma_cm_id *)(wc->wr_id);
 	struct context * ctx = (struct context *)(id->context);
 
-	//printf("in %s: context address is %p.\n",__func__,(void *)id->context);
-	
-	//printf("%s: 1.\n",__func__);
 	if (wc->status != IBV_WC_SUCCESS)
 	{
-		printf("opcode: %d.\n",wc->opcode);
+		//printf("opcode: %d.\n",wc->opcode);
 		return -1;
 	}
 	else
@@ -335,15 +301,6 @@ int on_completion(struct ibv_wc *wc)
                         {
                                 printf("recv TESTOK is ok.\n");
 
-                                //struct message msg_send;
-                                //msg_send.type = TESTOK;
-                                //char * key2 = "I recved your msg!";
-                                //strcpy(msg_send.key,key2);
-
-                                //memcpy(ctx->send_buffer,&msg_send,MSG_SIZE);
-
-                                //send_msg(id);
-				//
 				rdma_disconnect(conn);
                         }
 
@@ -380,8 +337,6 @@ void register_memory(struct rdma_cm_id * id)
 {
 	struct context * ctx = (struct context *)id->context;
 	
-	//printf("in %s: context address is %p.\n",__func__,(void *)ctx);	
-	
 	ctx->send_buffer = (char *)malloc(MSG_SIZE);
 	ctx->recv_buffer = (char *)malloc(MSG_SIZE);
 
@@ -409,9 +364,6 @@ int on_disconnect(struct rdma_cm_id * id)
 	free(ctx->recv_buffer);
 	ctx->send_buffer = NULL;
 	ctx->recv_buffer = NULL;
-	//free(id->context);
-
-	printf("stop 1.\n");
 
 	ret = ibv_dereg_mr(ctx->send_mr);
 	if (ret)
@@ -427,14 +379,10 @@ int on_disconnect(struct rdma_cm_id * id)
 		return ret;
 	}
 	
-	printf("stop 1.1.\n");
-	
 	rdma_destroy_qp(id); //maybe conn not id	
 	
 	//doesn't need ibv_destroy_cq();
 	//doesn't need ibv_destroy_comp_channel();
-
-	printf("stop 2.\n");
 
 	rdma_destroy_id(id);
 	if (ret)
@@ -443,8 +391,6 @@ int on_disconnect(struct rdma_cm_id * id)
 
 		return ret;
 	}
-
-	printf("stop 3.\n");
 	
 	ret = 1;
 	return ret;
@@ -460,17 +406,12 @@ int on_connection(struct rdma_cm_id * id)
 	
 	struct context * ctx = (struct context *)id->context;
 
-	//printf("in %s: context address is %p.\n",__func__,(void *)ctx);
-
 	memcpy(ctx->send_buffer,&msg_send,sizeof(struct message));
 	
 	int ret;
 
-	//printf("on_connection1.\n");
 	ret = send_msg(id);
-	//printf("on_connection2.\n");
 
-	//usleep(10000000);
 	return ret;
 }
 
@@ -489,14 +430,11 @@ int send_msg(struct rdma_cm_id * id)
         wr.num_sge = 1;
         wr.send_flags = IBV_SEND_SIGNALED;
 
-
-	//printf("send1.\n");
         sge.lkey = ctx->send_mr->lkey;
         //sge.addr = (uint64_t)ctx->send_buffer;
 	sge.addr = (uintptr_t)ctx->send_buffer;
         sge.length = MSG_SIZE;
 	
-	//printf("send2.\n");
         int rc;
 
 	rc = ibv_post_send(id->qp,&wr,&bad_wr);
@@ -505,7 +443,6 @@ int send_msg(struct rdma_cm_id * id)
 		printf("ibv_post_send error.\n");
 	}
 
-	//printf("send3.\n");
 	recv_msg(id);
 
 	return rc;
@@ -525,14 +462,11 @@ int recv_msg(struct rdma_cm_id * id)
         wr.sg_list = &sge;
         wr.num_sge = 1;
 
-	//printf("recv1.\n");
         //sge.addr = (uint64_t)ctx->recv_buffer;
 	sge.addr = (uintptr_t)ctx->recv_buffer;
         sge.length = MSG_SIZE;
         sge.lkey = ctx->recv_mr->lkey;
 	
-	//printf("recv2.\n");
-
 	int rc;
 
         rc = ibv_post_recv(id->qp,&wr,&bad_wr);
@@ -540,7 +474,6 @@ int recv_msg(struct rdma_cm_id * id)
 	{
 		printf("ibv_post_recv error.\n");
 	}
-	//printf("recv3.\n");
-	return rc;
 
+	return rc;
 }

@@ -48,8 +48,6 @@ int main()
 
 		return -1;
 	}
-	//printf("channel is %d. id->channel is %d.\n",channel->fd,listener->channel->fd);
-	//printf("id->port_num is %d.\n",listener->port_num);	
 
 	//set server'address which is expressed as struct sockaddr_in.
 	//when port is set to 0, port is seleted randomly.
@@ -57,7 +55,8 @@ int main()
 	memset(&addr,0,sizeof(addr));
 	addr.sin_family = AF_INET;
 	//addr.sin_addr.s_addr = htonl(INADDR_ANY);
-	addr.sin_addr.s_addr = inet_addr("192.168.253.164");
+	//Y7000 192.168.229.128 xiaoxin 192.168.253.164
+	addr.sin_addr.s_addr = inet_addr("192.168.229.128");
 	addr.sin_port = htons(45678);
 
 	//bind an RDMA identifier to a source address
@@ -72,7 +71,6 @@ int main()
 	char * ip = inet_ntoa(serverAddr->sin_addr);
 	//port is already set to "45678" using addr.sin_port
 	uint16_t port = ntohs(rdma_get_src_port(listener));
-
 	printf("server's ip address is %s.\n",ip);
 	printf("listening on port: %d.\n",port);
 	
@@ -150,9 +148,6 @@ int on_connect_request(struct rdma_cm_id * id)
         ibv_req_notify_cq(id->send_cq,0);
         ibv_req_notify_cq(id->recv_cq,0);
 
-        //pthread_t poll_send_thread;
-        //pthread_t poll_recv_thread;
-
 	struct context * ctx = (struct context *)id->context;
         pthread_create(&ctx->poll_send_thread,NULL,poll_send_cq,id);
         pthread_create(&ctx->poll_recv_thread,NULL,poll_recv_cq,id);
@@ -166,14 +161,9 @@ int on_connect_request(struct rdma_cm_id * id)
 	struct rdma_conn_param params;
 
 	memset(&params,0,sizeof(params));
-	//params.initiator_depth = params.responder_resources =1;
-	//params.rnr_retry_count = 7;
 
-	//printf("in %s: context address is %p.\n",__func__,id->context);
 	recv_msg(id);
 	rdma_accept(id,&params);
-
-	//recv_msg(id);
 }
 
 void build_qp_attr(struct ibv_qp_init_attr * qp_attr,struct rdma_cm_id * id)
@@ -256,8 +246,6 @@ void register_memory(struct rdma_cm_id * id)
 {
 	struct context * ctx = (struct context *)id->context;
 	             
-	//printf("in %s: context address is %p.\n",__func__,id->context);
-	//printf("%s is called.\n",__func__);
 	ctx->send_buffer = (char *)malloc(MSG_SIZE);
         ctx->recv_buffer = (char *)malloc(MSG_SIZE);
 
@@ -269,7 +257,6 @@ int on_completion(struct ibv_wc *wc)
 {
         struct rdma_cm_id * id = (struct rdma_cm_id *)wc->wr_id;
 	struct context * ctx = (struct context *)(id->context);
-	//printf("in %s: context address is %p.\n",__func__,id->context);
 
 	if (wc->status != IBV_WC_SUCCESS)
         {
@@ -305,7 +292,6 @@ int on_completion(struct ibv_wc *wc)
 
 				memcpy(ctx->send_buffer,&msg_send,sizeof(struct message));
 				
-				//printf("ready to send.\n");	
 				send_msg(id);
 			}
                 }
@@ -332,27 +318,19 @@ int send_msg(struct rdma_cm_id * id)
         struct ibv_sge sge;
         struct context * ctx = (struct context *)(id->context);
 
-        //printf("send1.\n");
 	memset(&wr, 0, sizeof(wr));
-        //wr.wr_id = (uint64_t)id;
 	wr.wr_id = (uintptr_t)id;
-	//printf("in %s : context address is %p.\n",__func__,id->context);
         wr.opcode = IBV_WR_SEND;
         wr.sg_list = &sge;
         wr.num_sge = 1;
         wr.send_flags = IBV_SEND_SIGNALED;
 
-        //printf("send2.\n");
 	sge.lkey = ctx->send_mr->lkey;
-        //sge.addr = (uint64_t)ctx->send_buffer;
-	//printf("sned2.1.\n");
 	sge.addr = (uintptr_t)ctx->send_buffer;
-	//printf("send2.2");
         sge.length = MSG_SIZE;
 
         int rc;
 
-	//printf("send3.\n");
         rc = ibv_post_send(id->qp,&wr,&bad_wr);
         if (rc)
         {
@@ -361,7 +339,6 @@ int send_msg(struct rdma_cm_id * id)
 
         recv_msg(id);
 
-	//printf("send4.\n");
         return rc;
 }
 
@@ -373,13 +350,11 @@ int recv_msg(struct rdma_cm_id * id)
         struct context * ctx = (struct context *)(id->context);
 
         memset(&wr,0,sizeof(wr));
-        //wr.wr_id = (uint64_t)id;
         wr.wr_id = (uintptr_t)id;
 	wr.next = NULL;
         wr.sg_list = &sge;
         wr.num_sge = 1;
 
-        //sge.addr = (uint64_t)ctx->recv_buffer;
 	sge.addr = (uintptr_t)ctx->recv_buffer;
         sge.length = MSG_SIZE;
         sge.lkey = ctx->recv_mr->lkey;
@@ -399,8 +374,6 @@ int recv_msg(struct rdma_cm_id * id)
 int on_connection(struct rdma_cm_id * id)
 {
 	int ret = 0;
-	//printf("in %s: sleeping 1 sec.\n",__func__);
-	//usleep(1000000000);
 
 	return ret;	
 }
@@ -409,13 +382,11 @@ int on_disconnect(struct rdma_cm_id * id)
 {
 	int ret = 0;
 
-	//printf("%s: 1.\n",__func__);	
 	struct context * ctx = (struct context *)id->context;
         free(ctx->send_buffer);
         free(ctx->recv_buffer);
         ctx->send_buffer = NULL;
         ctx->recv_buffer = NULL;
-	//free(id->context);
 
 	ret = ibv_dereg_mr(ctx->send_mr);
         if (ret)
@@ -434,7 +405,6 @@ int on_disconnect(struct rdma_cm_id * id)
 	free(id->context);
 
         rdma_destroy_qp(id);
-
 	rdma_destroy_id(id);
 
 	return ret;
