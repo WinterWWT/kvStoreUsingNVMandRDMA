@@ -301,8 +301,22 @@ int on_completion(struct ibv_wc *wc)
                         {
                                 printf("recv TESTOK is ok.\n");
 
+				struct message msg_send;
+                                msg_send.type = GETHT1;
+                                char * key = "give me hashtable address.";
+                        	strcpy(msg_send.key,key);
+
+                        	memcpy(ctx->send_buffer,&msg_send,sizeof(struct message));
+
+                        	send_msg(id);
+			}
+
+			if (msg_recv->type == HADDR1)
+			{
+				printf("hashtable address is %p.\n",msg_recv->address);
+
 				rdma_disconnect(conn);
-                        }
+			}
 
 		}
 		else if (wc->opcode == IBV_WC_RDMA_READ)

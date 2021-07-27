@@ -1,5 +1,8 @@
 #include "server.h"
 
+//register hashtable
+void register_hashTable();
+
 int on_event(struct rdma_cm_event * event);
 
 int on_connect_request(struct rdma_cm_id * id);
@@ -24,6 +27,13 @@ int on_disconnect(struct rdma_cm_id * id);
 
 int main()
 {
+	//prepare hashtable
+	struct bucket * bucketDocker1 = (struct bucket *)calloc(20000,sizeof(struct bucket));
+	struct hashTable hashTable1;
+	hashTable1.size = 0;
+	hashTable1.capacity = HASHTABLESIZE;
+	hashTable1.array = bucketDocker1;
+	
 	//init some variable which are needed by create connection between server and client
 	struct rdma_event_channel * channel = NULL;
 	struct rdma_cm_id * listener = NULL;
@@ -98,6 +108,14 @@ int main()
 	printf("here.\n");
 	
 	return 0;
+}
+
+void register_hashtable()
+{
+	bucketDocker1 = (struct bucket *)calloc(20000,sizeof(struct bucket));
+        hashtable1->size = 0;
+        hashtable1->capacity = HASHTABLESIZE;
+        hashtable1->array = bucketDocker1;
 }
 
 int on_event(struct rdma_cm_event * event)
@@ -251,6 +269,8 @@ void register_memory(struct rdma_cm_id * id)
 
         ctx->send_mr = ibv_reg_mr(id->pd,ctx->send_buffer,MSG_SIZE,IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE);
         ctx->recv_mr = ibv_reg_mr(id->pd,ctx->recv_buffer,MSG_SIZE,IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE);
+
+	ctx->hTable = hashtable1;
 }
 
 int on_completion(struct ibv_wc *wc)
@@ -287,12 +307,25 @@ int on_completion(struct ibv_wc *wc)
 
 				struct message msg_send;
 				msg_send.type = TESTOK;
-				char * key2 = "I recved your msg!";
-				strcpy(msg_send.key,key2);
+				char * key = "I recved your msg!";
+				strcpy(msg_send.key,key);
 
 				memcpy(ctx->send_buffer,&msg_send,sizeof(struct message));
 				
 				send_msg(id);
+			}
+			else if (msg_recv->type == GETHT1)
+			{
+				struct message msg_send;
+                                msg_send.type = HADDR1;
+                                char * key = "give you address of hashtable.";
+                                strcpy(msg_send.key,key);
+				msg_send.address = (char *)hashtable1;	
+
+                                memcpy(ctx->send_buffer,&msg_send,sizeof(struct message));
+
+                                send_msg(id);
+
 			}
                 }
 
