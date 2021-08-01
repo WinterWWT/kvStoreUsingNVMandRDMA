@@ -1,5 +1,11 @@
 #include "server.h"
 
+struct rdma_cm_id * listener = NULL;
+struct rdma_cm_event * event = NULL;
+struct rdma_event_channel * channel = NULL;
+
+void stop_manually(int signal);
+
 //register hashtable
 void register_hashTable();
 
@@ -27,19 +33,12 @@ int on_disconnect(struct rdma_cm_id * id);
 
 int main()
 {
-	//prepare hashtable
-	struct bucket * bucketDocker1 = (struct bucket *)calloc(20000,sizeof(struct bucket));
-	struct hashTable hashTable1;
-	hashTable1.size = 0;
-	hashTable1.capacity = HASHTABLESIZE;
-	hashTable1.array = bucketDocker1;
+	register_hashTable();
+	printf("hashtable address is %p. arrar address is %p. bucketDocker1 address is %p.\n",hashtable1,hashtable1->array,bucketDocker1);
 	
 	//init some variable which are needed by create connection between server and client
-	struct rdma_event_channel * channel = NULL;
-	struct rdma_cm_id * listener = NULL;
-	struct rdma_cm_event * event = NULL;
 	int rl = 0;
-	
+
 	//create a event channel
 	channel = rdma_create_event_channel();
 	if (channel == NULL)
@@ -83,6 +82,9 @@ int main()
 	uint16_t port = ntohs(rdma_get_src_port(listener));
 	printf("server's ip address is %s.\n",ip);
 	printf("listening on port: %d.\n",port);
+
+	//register target signal
+        signal(SIGINT,stop_manually);
 	
 	//retrieves the next pending communication event.
 	while(rdma_get_cm_event(channel,&event) == 0)
@@ -98,7 +100,7 @@ int main()
 			break;
 		}
 	}
-		
+	
 	//deallocate a communication identifier
 	rdma_destroy_id(listener);
 
@@ -110,9 +112,27 @@ int main()
 	return 0;
 }
 
-void register_hashtable()
+void stop_manually(int signal)
 {
-	bucketDocker1 = (struct bucket *)calloc(20000,sizeof(struct bucket));
+	free(hashtable1);
+	free(bucketDocker1);
+
+	printf("\nfree hashtable.\n");	
+	//deallocate a communication identifier
+	rdma_destroy_id(listener);
+
+        //destroy a event channel
+        rdma_destroy_event_channel(channel);
+	printf("destroy resource.\n");
+
+	exit(0);
+}
+
+void register_hashTable()
+{
+	bucketDocker1 = (struct bucket *)calloc(HASHTABLESIZE,sizeof(struct bucket));
+	hashtable1 = (struct hashTable *)malloc(sizeof(struct hashTable));
+	//ibv_reg_mr();
         hashtable1->size = 0;
         hashtable1->capacity = HASHTABLESIZE;
         hashtable1->array = bucketDocker1;
@@ -271,6 +291,10 @@ void register_memory(struct rdma_cm_id * id)
         ctx->recv_mr = ibv_reg_mr(id->pd,ctx->recv_buffer,MSG_SIZE,IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE);
 
 	ctx->hTable = hashtable1;
+	ctx->bDocker = bucketDocker1;
+
+	ctx->read_mr = ibv_reg_mr(id->pd,ctx->hTable,sizeof(struct hashTable),IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE);
+        ctx->write_mr = ibv_reg_mr(id->pd,ctx->bDocker,HASHTABLESIZE * sizeof(struct bucket),IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE);
 }
 
 int on_completion(struct ibv_wc *wc)
@@ -292,6 +316,14 @@ int on_completion(struct ibv_wc *wc)
 			struct message * msg_send = (struct message *)ctx->send_buffer;
 
 			printf("send: %s.\n",msg_send->key);
+			if (msg_send->type == HADDR1)
+			{
+				printf("hashtable address is %p.\n",(void *)(msg_send->hTable));
+				printf("hTable_rkey is %u.\n",msg_send->hTable_rkey);
+				
+				printf("bucketDocker address is %p.\n",(void *)(msg_send->bDocker));
+				printf("bDocker_rkey is %u.\n",msg_send->bDocker_rkey);
+			}
                 }
                 else if (wc->opcode == IBV_WC_RECV)
                 {
@@ -317,15 +349,19 @@ int on_completion(struct ibv_wc *wc)
 			else if (msg_recv->type == GETHT1)
 			{
 				struct message msg_send;
-                                msg_send.type = HADDR1;
+                                
+				msg_send.type = HADDR1;
                                 char * key = "give you address of hashtable.";
                                 strcpy(msg_send.key,key);
-				msg_send.address = (char *)hashtable1;	
+				
+				msg_send.hTable = (uintptr_t)(ctx->hTable);
+			       	msg_send.bDocker = (uintptr_t)(ctx->bDocker);
+				msg_send.hTable_rkey = ctx->read_mr->rkey;
+				msg_send.bDocker_rkey = ctx->write_mr->rkey;
 
                                 memcpy(ctx->send_buffer,&msg_send,sizeof(struct message));
 
                                 send_msg(id);
-
 			}
                 }
 

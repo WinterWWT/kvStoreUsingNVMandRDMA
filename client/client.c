@@ -37,6 +37,12 @@ int send_msg(struct rdma_cm_id * id);
 //ibv_post_recv()
 int recv_msg(struct rdma_cm_id * id);
 
+//read
+int read_remote(struct rdma_cm_id * id);
+
+//write
+int write_remote(struct rdma_cm_id * id);
+
 //free all resources: cq_channel, cq, qp, id, event_channel
 int on_disconnect(struct rdma_cm_id * id);
 
@@ -82,6 +88,7 @@ int main(int argc,char ** argv)
 	signal(SIGINT,stop_manually);
 
 	struct rdma_cm_event * event = NULL;
+	//int i_c =0;
 	while(rdma_get_cm_event(channel,&event) == 0)
 	{
 		struct rdma_cm_event event_copy;
@@ -94,6 +101,8 @@ int main(int argc,char ** argv)
 		{
 			break;
 		}
+		
+		//printf("%d.\n",++i_c);
 	}
 	
 	rdma_destroy_event_channel(channel);
@@ -163,8 +172,8 @@ int on_addr_resolved(struct rdma_cm_id * id)
 	id->send_cq_channel = ibv_create_comp_channel(id->verbs);
 	id->recv_cq_channel = ibv_create_comp_channel(id->verbs);
 	
-	id->send_cq = ibv_create_cq(id->verbs,16000,NULL,id->send_cq_channel,0);
-	id->recv_cq = ibv_create_cq(id->verbs,16000,NULL,id->recv_cq_channel,0);
+	id->send_cq = ibv_create_cq(id->verbs,16,NULL,id->send_cq_channel,0);	//16000
+	id->recv_cq = ibv_create_cq(id->verbs,16,NULL,id->recv_cq_channel,0);	//16000
 
 	ibv_req_notify_cq(id->send_cq,0);
 	ibv_req_notify_cq(id->recv_cq,0);
@@ -197,8 +206,8 @@ void build_qp_attr(struct ibv_qp_init_attr * qp_attr,struct rdma_cm_id * id)
         qp_attr->recv_cq = id->recv_cq;
         qp_attr->qp_type = IBV_QPT_RC;
 	
-	qp_attr->cap.max_send_wr = 16000;
-	qp_attr->cap.max_recv_wr = 16000;
+	qp_attr->cap.max_send_wr = 16;	//16000
+	qp_attr->cap.max_recv_wr = 16;	//16000
         qp_attr->cap.max_send_sge = 1;
         qp_attr->cap.max_recv_sge = 1;
         
@@ -212,20 +221,29 @@ void * poll_send_cq(void * cm_id)
 	struct rdma_cm_id * id = (struct rdma_cm_id *)cm_id;
 	
 	struct ibv_wc wc;
+	struct ibv_cq * cq;
+	void * tar;
 
 	while(true)
 	{
-		ibv_get_cq_event(id->send_cq_channel,&id->send_cq,&cm_id);
-		
-		ibv_ack_cq_events(id->send_cq,1);
+		//ibv_get_cq_event(id->send_cq_channel,&id->send_cq,&cm_id);
+		ibv_get_cq_event(id->send_cq_channel,&cq,&tar);
 
-		ibv_req_notify_cq(id->send_cq,0);
+		//ibv_ack_cq_events(id->send_cq,1);
+		ibv_ack_cq_events(cq,1);
+
+		//ibv_req_notify_cq(id->send_cq,0);
+		ibv_req_notify_cq(cq,0);
 		
 		int num;
 
-		while(num = ibv_poll_cq(id->send_cq,1,&wc))
+		//int i_send;
+		//while(num = ibv_poll_cq(id->send_cq,1,&wc))
+		while(num = ibv_poll_cq(cq,1,&wc))
 		{
 			int ret = on_completion(&wc);
+			//printf("num is %d.\n",num);
+			//printf("i_send: %d.ret is %d.\n",++i_send,ret);
 			
 			if (ret)
 			{
@@ -233,6 +251,7 @@ void * poll_send_cq(void * cm_id)
 			}
 		}
 	}
+	printf("never.\n");
 
 	return NULL;
 }
@@ -244,20 +263,28 @@ void * poll_recv_cq(void * cm_id)
 	struct rdma_cm_id * id = (struct rdma_cm_id *)cm_id;
 
         struct ibv_wc wc;
+	struct ibv_cq * cq;
+	void * tar;
 
         while(true)
         {
-		ibv_get_cq_event(id->recv_cq_channel,&id->recv_cq,&cm_id);
+		//ibv_get_cq_event(id->recv_cq_channel,&id->recv_cq,&cm_id);
+		ibv_get_cq_event(id->recv_cq_channel,&cq,&tar);
 
-                ibv_ack_cq_events(id->recv_cq,1);
+                //ibv_ack_cq_events(id->recv_cq,1);
+		ibv_ack_cq_events(cq,1);
 
-                ibv_req_notify_cq(id->recv_cq,0);
+                //ibv_req_notify_cq(id->recv_cq,0);
+		ibv_req_notify_cq(cq,0);
 
                 int num;
 
-		while(num = ibv_poll_cq(id->recv_cq,1,&wc))
+		//int i_recv;
+		//while(num = ibv_poll_cq(id->recv_cq,1,&wc))
+		while(num = ibv_poll_cq(cq,1,&wc))
                 {
 			int ret = on_completion(&wc);
+			//printf("i_recv: %d.ret is %d.\n",++i_recv,ret);
 
                         if (ret)
                         {
@@ -274,16 +301,17 @@ int on_completion(struct ibv_wc *wc)
 	struct rdma_cm_id * id = (struct rdma_cm_id *)(wc->wr_id);
 	struct context * ctx = (struct context *)(id->context);
 
+	//printf("opcode: %d.\n",wc->opcode);
 	if (wc->status != IBV_WC_SUCCESS)
 	{
-		//printf("opcode: %d.\n",wc->opcode);
+		printf("failed, opcode: %d.\n",wc->opcode);
 		return -1;
 	}
 	else
 	{
 		if(wc->opcode == IBV_WC_SEND)
 		{
-			printf("send is completed.\n");
+			printf("send is completed. opcode is %d.\n",wc->opcode);
 			
 			struct message * msg_send = (struct message *)ctx->send_buffer;
 			
@@ -291,7 +319,7 @@ int on_completion(struct ibv_wc *wc)
 		}
 		else if (wc->opcode == IBV_WC_RECV)
 		{
-			printf("recv is completed.\n");
+			printf("recv is completed. opcode is %d.\n",wc->opcode);
 
 			struct message * msg_recv = (struct message *)ctx->recv_buffer;
 
@@ -313,19 +341,79 @@ int on_completion(struct ibv_wc *wc)
 
 			if (msg_recv->type == HADDR1)
 			{
-				printf("hashtable address is %p.\n",msg_recv->address);
+				hashtable1 = (struct hashTable *)(msg_recv->hTable);
+				ctx->hTable = hashtable1;
+				printf("hashtable address is %p.\n",(void *)ctx->hTable);
 
-				rdma_disconnect(conn);
+				ctx->hTable_rkey = msg_recv->hTable_rkey;
+
+				printf("hTable_rkey is %u.\n",ctx->hTable_rkey);
+
+				bucketDocker1 = (struct bucket *)(msg_recv->bDocker);
+				ctx->bDocker = bucketDocker1;
+				printf("bucketDocker address is %p.\n",(void *)ctx->bDocker);
+				
+				ctx->bDocker_rkey = msg_recv->bDocker_rkey;
+
+				printf("bDocker_rkey is %u.\n",ctx->bDocker_rkey);
+				
+				char * key = "user6284781860667377211";
+				ctx->offset = (murmurhash(key,strlen(key),SEED) % HASHTABLESIZE) * sizeof(struct bucket);
+				ctx->len = sizeof(struct bucket);
+				struct bucket writeBuck;
+				strcpy(writeBuck.key,key);
+				writeBuck.valuePtr = NULL;
+				writeBuck.valueLen = 100;
+				memcpy(ctx->send_buffer,&writeBuck,sizeof(struct bucket));
+				
+				write_remote(id);
+
+				//printf("write 1.\n");
+				
+				//rdma_disconnect(conn);
 			}
 
 		}
 		else if (wc->opcode == IBV_WC_RDMA_READ)
 		{  
-			printf("read is completed.\n");
+			printf("read is completed. opcode is %d.\n",wc->opcode);
+
+			struct bucket * readBucket = (struct bucket *)ctx->recv_buffer;
+			printf("read: %s. valuesize is %d.\n",readBucket->key,readBucket->valueLen);
+
+			rdma_disconnect(conn);
 		}
 		else if (wc->opcode == IBV_WC_RDMA_WRITE)
 		{
-			printf("write is completed.\n");
+			printf("write is completed. opcode is %d.\n",wc->opcode);
+
+			struct bucket * writeBucket = (struct bucket *)ctx->send_buffer;
+			printf("write: %s.\n",writeBucket->key);
+
+			if(writeBucket->valueLen == 200)
+                        {
+				//printf("111.\n");
+                                char * key = "user8517097267634966620";
+                                ctx->offset = (murmurhash(key,strlen(key),SEED) % HASHTABLESIZE) * sizeof(struct bucket);
+                                ctx->len = sizeof(struct bucket);
+
+                                read_remote(id);
+                        }
+			
+			if (writeBucket->valueLen == 100)
+			{
+				//printf("write 2.\n");
+				char * key2 = "user8517097267634966620";
+                        	ctx->offset = (murmurhash(key2,strlen(key2),SEED) % HASHTABLESIZE) * sizeof(struct bucket);
+                        	ctx->len = sizeof(struct bucket);
+                        	struct bucket writeBuck2;
+                        	strcpy(writeBuck2.key,key2);
+                        	writeBuck2.valuePtr = NULL;
+                        	writeBuck2.valueLen = 200;
+                       		memcpy(ctx->send_buffer,&writeBuck2,sizeof(struct bucket));
+
+                        	write_remote(id);
+			}
 		}
 	
 	}
@@ -486,8 +574,81 @@ int recv_msg(struct rdma_cm_id * id)
         rc = ibv_post_recv(id->qp,&wr,&bad_wr);
 	if (rc)
 	{
-		printf("ibv_post_recv error.\n");
+		printf("ibv_post_recv recv() error.\n");
 	}
 
 	return rc;
 }
+
+int read_remote(struct rdma_cm_id * id)
+{
+        struct ibv_send_wr wr;
+        struct ibv_send_wr *bad_wr = NULL;
+        struct ibv_sge sge;
+        struct context *ctx = (struct context *)(id->context);
+	//memset(ctx->recv_buffer,0,sizeof(ctx->recv_buffer));
+	
+	printf("in %s, 1.\n",__func__);
+        memset(&wr,0,sizeof(wr));
+        wr.wr_id = (uintptr_t)id;
+        wr.opcode = IBV_WR_RDMA_READ;
+        wr.send_flags = IBV_SEND_SIGNALED;
+
+        wr.wr.rdma.remote_addr = (uintptr_t)(ctx->bDocker) + ctx->offset;
+        wr.wr.rdma.rkey = ctx->bDocker_rkey;
+
+	printf("in %s, 2.\n",__func__);
+	wr.sg_list = &sge;
+	wr.num_sge = 1;
+	sge.addr = (uintptr_t)ctx->recv_buffer;
+	sge.length = ctx->len;
+	sge.lkey = ctx->recv_mr->lkey;
+
+	int rc;
+
+	printf("in %s, 3.\n",__func__);
+	rc = ibv_post_send(id->qp,&wr,&bad_wr);
+	//printf("rc is %d.\n",rc);
+	if (rc)
+        {
+                printf("ibv_post_send read() error.\n");
+        }
+
+	printf("in %s, 4.\n",__func__);
+
+	return rc;
+}
+
+int write_remote(struct rdma_cm_id * id)
+{
+        struct ibv_send_wr wr;
+        struct ibv_send_wr *bad_wr = NULL;
+        struct ibv_sge sge;
+        struct context *ctx = (struct context *)(id->context);
+
+        memset(&wr,0,sizeof(wr));
+        wr.wr_id = (uintptr_t)id;
+        wr.opcode = IBV_WR_RDMA_WRITE;
+        wr.send_flags = IBV_SEND_SIGNALED;
+
+        wr.wr.rdma.remote_addr = (uintptr_t)(ctx->bDocker) + ctx->offset;
+        wr.wr.rdma.rkey = ctx->bDocker_rkey;
+
+        wr.sg_list = &sge;
+        wr.num_sge = 1;
+        sge.addr = (uintptr_t)ctx->send_buffer;
+        sge.length = ctx->len;
+        sge.lkey = ctx->send_mr->lkey;
+
+        int rc;
+
+        rc = ibv_post_send(id->qp,&wr,&bad_wr);
+        if (rc)
+        {
+                printf("ibv_post_send write() error.\n");
+        }
+
+        return rc;
+}
+
+

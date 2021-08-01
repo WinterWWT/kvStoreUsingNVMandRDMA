@@ -11,6 +11,7 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <unistd.h>
+#include <signal.h>
 
 #define TIMEOUT_IN_MS 500
 #define MSG_SIZE 8192
@@ -39,11 +40,13 @@ struct context
 {
 	struct ibv_mr * send_mr;
 	struct ibv_mr * recv_mr;
-
 	char * send_buffer;
 	char * recv_buffer;
 
+	struct ibv_mr * read_mr;
+	struct ibv_mr * write_mr;
 	struct hashTable * hTable;
+        struct bucket * bDocker;
 
 	pthread_t poll_send_thread;
         pthread_t poll_recv_thread;
@@ -67,7 +70,10 @@ struct message
 {
 	uint8_t type;
 	char key[32];
-	char * address;
+	uintptr_t hTable;
+	uintptr_t bDocker;
+	uint32_t hTable_rkey;
+	uint32_t bDocker_rkey;
 };
 
 #endif
