@@ -133,7 +133,7 @@ void register_hashTable()
 	bucketDocker1 = (struct bucket *)calloc(HASHTABLESIZE,sizeof(struct bucket));
 	hashtable1 = (struct hashTable *)malloc(sizeof(struct hashTable));
 	//ibv_reg_mr();
-        hashtable1->size = 0;
+        hashtable1->size = 10;
         hashtable1->capacity = HASHTABLESIZE;
         hashtable1->array = bucketDocker1;
 }
@@ -226,17 +226,19 @@ void * poll_send_cq(void * cm_id)
 
         struct rdma_cm_id * id = (struct rdma_cm_id *)cm_id;
 
+	struct ibv_cq * cq;
         struct ibv_wc wc;
+	void * tar;
 
         while(true)
         {
-                ibv_get_cq_event(id->send_cq_channel,&id->send_cq,&cm_id);
+                ibv_get_cq_event(id->send_cq_channel,&cq,&tar);
 
-                ibv_ack_cq_events(id->send_cq,1);
+                ibv_ack_cq_events(cq,1);
 
-                ibv_req_notify_cq(id->send_cq,0);
+                ibv_req_notify_cq(cq,0);
 
-               	while(ibv_poll_cq(id->send_cq,1,&wc))
+               	while(ibv_poll_cq(cq,1,&wc))
                 {
                         int ret = on_completion(&wc);
 
@@ -256,17 +258,19 @@ void * poll_recv_cq(void * cm_id)
 
         struct rdma_cm_id * id = (struct rdma_cm_id *)cm_id;
 
+	struct ibv_cq * cq;
         struct ibv_wc wc;
+	void * tar;
 
         while(true)
         {
-                ibv_get_cq_event(id->recv_cq_channel,&id->recv_cq,&cm_id);
+                ibv_get_cq_event(id->recv_cq_channel,&cq,&tar);
 
-                ibv_ack_cq_events(id->recv_cq,1);
+                ibv_ack_cq_events(cq,1);
 
-                ibv_req_notify_cq(id->recv_cq,0);
+                ibv_req_notify_cq(cq,0);
 
-                while(ibv_poll_cq(id->recv_cq,1,&wc))
+                while(ibv_poll_cq(cq,1,&wc))
                 {
                         int ret = on_completion(&wc);
 
@@ -396,7 +400,8 @@ int send_msg(struct rdma_cm_id * id)
 
 	sge.lkey = ctx->send_mr->lkey;
 	sge.addr = (uintptr_t)ctx->send_buffer;
-        sge.length = MSG_SIZE;
+        //sge.length = MSG_SIZE;
+	sge.length = sizeof(struct message);
 
         int rc;
 
@@ -425,7 +430,8 @@ int recv_msg(struct rdma_cm_id * id)
         wr.num_sge = 1;
 
 	sge.addr = (uintptr_t)ctx->recv_buffer;
-        sge.length = MSG_SIZE;
+        //sge.length = MSG_SIZE;
+	sge.length = sizeof(struct message);
         sge.lkey = ctx->recv_mr->lkey;
 
         int rc;
@@ -437,7 +443,6 @@ int recv_msg(struct rdma_cm_id * id)
         }
 
         return rc;
-
 }
 
 int on_connection(struct rdma_cm_id * id)
